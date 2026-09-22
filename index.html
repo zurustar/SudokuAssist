@@ -54,7 +54,7 @@
     padding: 20px 16px 48px;
     -webkit-text-size-adjust: 100%;
   }
-  .wrap { max-width: 900px; margin: 0 auto; }
+  .wrap { max-width: 1120px; margin: 0 auto; }
 
   header { margin-bottom: 18px; }
   h1 { font-size: 20px; margin: 0 0 4px; letter-spacing: .02em; }
@@ -62,8 +62,16 @@
   .lede b { color: var(--text); font-weight: 600; }
 
   .layout { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
-  .boardcol { flex: 1 1 340px; min-width: 0; }
-  .side { flex: 0 1 240px; min-width: 200px; }
+  .boardcol { flex: 1 1 400px; min-width: 0; max-width: 560px; }
+
+  /* 盤面の下に並ぶカード群。幅が足りれば2列に折り返す */
+  .panel {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 14px;
+    align-items: start;
+    margin-top: 6px;
+  }
 
   /* ---- board ---- */
   .board {
@@ -143,6 +151,7 @@
     padding: 14px 16px;
     margin-bottom: 14px;
   }
+  .panel .card { margin-bottom: 0; }
   .status { font-size: 14px; font-weight: 600; margin: 0 0 6px; }
   .status.ok  { color: var(--auto); }
   .status.bad { color: var(--err); }
@@ -155,7 +164,7 @@
   .tech .n { color: var(--muted); font-variant-numeric: tabular-nums; }
   .tech .adv { color: var(--auto); font-weight: 600; }
 
-  .row { display: flex; gap: 8px; }
+  .row { display: flex; gap: 8px; margin-top: 12px; }
   button {
     flex: 1;
     font: inherit; font-size: 13px;
@@ -169,9 +178,13 @@
   button:hover:not(:disabled) { background: var(--btn-hover); }
   button:disabled { opacity: .4; cursor: default; }
 
-  .help { font-size: 12px; color: var(--muted); line-height: 1.85; margin: 0; }
-  .help dt { font-weight: 600; color: var(--text); }
-  .help dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; }
+  /* dl 自身をグリッドにする（以前は .help dl と書いていて、一致する要素が無かった） */
+  .help {
+    font-size: 12px; color: var(--muted); line-height: 1.8;
+    margin: 0;
+    display: grid; grid-template-columns: auto 1fr; gap: 2px 10px;
+  }
+  .help dt { font-weight: 600; color: var(--text); white-space: nowrap; }
   .help dd { margin: 0; }
   kbd {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -185,6 +198,75 @@
     min-height: 16px; font-size: 12px; color: var(--err);
     text-align: center; margin-top: 8px;
   }
+
+  /* ---- 自動確定の記録（盤面の右、内部スクロール） ---- */
+  .logsec {
+    flex: 1 1 380px;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    /* ページ全体が下に伸びないよう、画面の高さに収めて中だけを流す */
+    position: sticky;
+    top: 20px;
+    max-height: calc(100vh - 40px);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px 4px 0 16px;
+  }
+  .logsec h2 {
+    font-size: 13px; margin: 0 0 4px;
+    display: flex; align-items: baseline; gap: 8px;
+  }
+  .logsec .count { font-size: 12px; font-weight: 400; color: var(--muted); }
+  .logsec h2 { margin-bottom: 8px; }
+
+  .log {
+    list-style: none; margin: 0; padding: 0 12px 14px 0;
+    counter-reset: step;
+    overflow-y: auto;
+    flex: 1 1 auto;
+    scrollbar-gutter: stable;
+  }
+  /* 1履歴 = 1行。はみ出る分は省略し、全文はツールチップで見せる */
+  .log li {
+    counter-increment: step;
+    display: grid;
+    grid-template-columns: 2.1em 5.6em 1fr;
+    gap: 0 6px;
+    align-items: baseline;
+    padding: 2px 4px;
+    font-size: 11px;
+    line-height: 1.5;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .log li:nth-child(even) { background: var(--peer); }
+  .log li::before {
+    content: counter(step);
+    color: var(--faint); font-size: 10px; text-align: right;
+  }
+  .log .head { font-weight: 600; }
+  .log .what { color: var(--auto); font-weight: 700; }
+  .log .why { color: var(--muted); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+
+  /* 人間が入力した行は、自動確定と区別する */
+  .log li.mine { box-shadow: inset 2px 0 0 var(--line-strong); }
+  .log li.mine .what { color: var(--user); }
+  .log li.mine .why { color: var(--faint); }
+
+  .log li:hover { background: var(--btn-hover); }
+  .log li.cur { background: var(--sel); }
+
+  /* 1カラムに畳まれたときは、記録も普通に流す */
+  @media (max-width: 860px) {
+    .boardcol { max-width: none; }
+    .logsec {
+      position: static;
+      max-height: 60vh;
+      padding-bottom: 4px;
+    }
+  }
 </style>
 </head>
 <body>
@@ -192,11 +274,12 @@
   <header>
     <h1>数独アシスト</h1>
     <p class="lede">
-      確定した数字を入力すると、同じ行・列・3×3ブロックからその候補を消します。<br>
-      さらに<b>枝分かれ・裸のペア／トリオ・隠れペア／トリオ・X-Wing／Swordfish／Jellyfish・XY／XYZ／W-Wing・彩色</b>で候補を削り、
-      <b>候補が1つになったマス</b>と<b>その数字を置ける場所が1つになったマス</b>を、連鎖が止まるまで自動で確定します。<br>
-      試し置きや解の一意性を前提とする技法は使わず、論理だけで断定できるものに限っています。
-      自動確定したマスにカーソルを重ねると、確定の理由が出ます。
+      数字を入力すると、同じ行・列・3×3ブロックからその候補を消します。さらに
+      <b>枝分かれ・裸のペア／トリオ・隠れペア／トリオ・X-Wing／Swordfish／Jellyfish・XY／XYZ／W-Wing・彩色</b>で候補を削り、
+      <b>候補が1つになったマス</b>と<b>その数字を置ける場所が1つになったマス</b>を、連鎖が止まるまで自動で確定します。
+      試し置きや解の一意性を前提とする技法は使いません。<br>
+      <b>自動で確定したマスにも上書きできます。</b>打ち間違いはその場で直せば、連鎖もすべて正しく直ります。
+      確定したマスや記録の行にカーソルを重ねると、確定の理由が出ます。
     </p>
   </header>
 
@@ -208,37 +291,39 @@
         <span><i style="color:var(--auto)">5</i> 自動確定</span>
       </div>
       <div class="toast" id="toast"></div>
-    </div>
 
-    <aside class="side">
-      <div class="card">
-        <p class="status" id="status">入力待ち</p>
-        <p class="meta">
-          確定 <b id="filled">0</b> / 81　（自分 <b id="byuser">0</b>・自動 <b id="byauto">0</b>）<br>
-          残り <b id="left">81</b> マス
-        </p>
-      </div>
+      <div class="panel">
+        <div class="card">
+          <p class="status" id="status">入力待ち</p>
+          <p class="meta">
+            確定 <b id="filled">0</b> / 81　（自分 <b id="byuser">0</b>・自動 <b id="byauto">0</b>）<br>
+            残り <b id="left">81</b> マス
+          </p>
+          <div class="row">
+            <button id="undo" disabled>← 元に戻す</button>
+            <button id="redo" disabled>やり直す →</button>
+          </div>
+        </div>
 
-      <div class="card">
-        <div class="row">
-          <button id="undo" disabled>← 元に戻す</button>
-          <button id="redo" disabled>やり直す →</button>
+        <div class="card" id="helpcard">
+          <dl class="help">
+            <dt>数字を確定</dt><dd>セルを選んで <kbd>1</kbd>〜<kbd>9</kbd>、または候補の数字を直接クリック</dd>
+            <dt>取り消し</dt><dd><kbd>0</kbd> / <kbd>Del</kbd> / <kbd>Back</kbd></dd>
+            <dt>移動</dt><dd><kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd></dd>
+            <dt>履歴</dt><dd><kbd>⌘Z</kbd> / <kbd>⇧⌘Z</kbd></dd>
+          </dl>
+        </div>
+
+        <div class="card" id="techcard" hidden>
+          <p class="cardtitle">使われた技法</p>
+          <ul class="tech" id="tech"></ul>
         </div>
       </div>
+    </div>
 
-      <div class="card" id="techcard" hidden>
-        <p class="cardtitle">使われた技法</p>
-        <ul class="tech" id="tech"></ul>
-      </div>
-
-      <div class="card">
-        <dl class="help">
-          <dt>数字を確定</dt><dd>セルを選んで <kbd>1</kbd>〜<kbd>9</kbd>、または候補の数字を直接クリック</dd>
-          <dt>取り消し</dt><dd><kbd>0</kbd> / <kbd>Del</kbd> / <kbd>Back</kbd></dd>
-          <dt>移動</dt><dd><kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd></dd>
-          <dt>履歴</dt><dd><kbd>⌘Z</kbd> / <kbd>⇧⌘Z</kbd></dd>
-        </dl>
-      </div>
+    <aside class="logsec" id="logsec" hidden>
+      <h2>確定の記録 <span class="count" id="logcount"></span></h2>
+      <ol class="log" id="log"></ol>
     </aside>
   </div>
 </div>
@@ -270,8 +355,59 @@ for (let b = 0; b < 9; b++) {
 const ROWS = units.slice(0, 9), COLS = units.slice(9, 18), BOXES = units.slice(18, 27);
 const boxOf = i => ((i / 27) | 0) * 3 + (((i % 9) / 3) | 0);
 
-// ユニットの種別名（units の並び順に対応）
-const UNIT_KIND = ["行", "列", "ブロック"];
+// ユニットの呼び名（units の並び順に対応）。ブロックは左上から右下へ 1〜9。
+const unitName = ui => ui < 9 ? `${ui + 1}行目` : ui < 18 ? `${ui - 8}列目` : `ブロック${ui - 17}`;
+
+// マスの呼び名
+const cellName = i => `${rowOf(i) + 1}行${colOf(i) + 1}列`;
+
+const listNums = a => [...a].sort((x, y) => x - y).join("・");
+const listCells = a => [...a].sort((x, y) => x - y).map(cellName).join("・");
+const candSet = (...ds) => `{${ds.sort((x, y) => x - y).join(",")}}`;
+
+/**
+ * 確定の理由を日本語の文にする。
+ * 理由は derive() が構造化データで返すので、文章の組み立てはここだけの責任。
+ * （文字列で持ち回すと、あとから機械的に検証できなくなる）
+ */
+const RELATION = { row: "同じ行", col: "同じ列", box: "同じブロック" };
+const RELATION_SHORT = { row: "行", col: "列", box: "ブロック" };
+const SUBSET_NAME = ["", "", "ペア", "トリオ", "カルテット"];
+const FISH_NAME = ["", "", "X-Wing", "Swordfish", "Jellyfish"];
+
+function reasonText(w) {
+  if (!w) return "";
+  if (w.kind === "user") return "自分で入力";
+  if (w.kind === "naked") {
+    const bits = [];
+    const where = w.groups.map(g => `${listNums(g.digits)} は${RELATION[g.type]}`);
+    if (where.length) bits.push(where.join("、") + "にあり");
+    for (const t of w.techs) bits.push(`${listNums(t.digits)} は ${t.text}により除外され`);
+    return bits.length ? `${bits.join("、")}、残るのは ${w.value} だけ` : `候補が ${w.value} だけ`;
+  }
+  const bits = [];
+  if (w.blockers.length) bits.push(`他の空きマスは ${listCells(w.blockers)} の ${w.digit} に塞がれ`);
+  for (const t of w.techs) bits.push(`${t}により除外され`);
+  return `${unitName(w.unit)}で ${w.digit} が入れるのはこのマスだけ`
+    + (bits.length ? `（${bits.join("、")}ている）` : "");
+}
+
+/**
+ * 一覧の1行に収まる短縮形。完全な文は行のツールチップに出す。
+ * 唯一候補法は除外した数字がすべて出るので、短縮形でも理由として完結している。
+ * 唯一位置法だけは阻害マスの列挙を落とすので、詳細はツールチップ側。
+ */
+function reasonShort(w) {
+  if (!w) return "";
+  if (w.kind === "user") return "自分で入力";
+  if (w.kind === "naked") {
+    const bits = w.groups.map(g => `${RELATION_SHORT[g.type]} ${listNums(g.digits)}`);
+    for (const t of w.techs) bits.push(`${t.text.split("（")[0]} ${listNums(t.digits)}`);
+    return bits.length ? `${bits.join("、")} を除いて ${w.value}` : `候補が ${w.value} だけ`;
+  }
+  const techs = w.techs.map(t => t.split("（")[0]);
+  return `${unitName(w.unit)}で ${w.digit} はここだけ` + (techs.length ? `＋${techs.join("・")}` : "");
+}
 
 // 各セルが影響を受ける相手（同じ行・列・ブロックのセル）
 const peers = Array.from({ length: N }, () => new Set());
@@ -308,13 +444,24 @@ function derive(userValues) {
   const cands = new Array(N).fill(null);
   const clash = new Set();      // 相反する推論が出たセル
   const usage = new Map();      // 技法名 -> 適用回数
+  const log = [];               // 自動確定の記録（確定した順）
   let changed = false;
+
+  // 候補が消えた原因。cause[マス] = Map(数字 -> 原因)
+  //   数字を塞いでいるマスの番号か、技法による消去の説明文。
+  // 「候補が1つになった」という結論だけでは人間が追えないので、
+  // 消えた8個それぞれの出どころを残しておく。
+  const cause = Array.from({ length: N }, () => new Map());
 
   // 初期候補：1〜9 から、同じ行・列・ブロックの確定値を除く
   for (let i = 0; i < N; i++) {
     if (values[i]) continue;
     const s = new Set(ALL);
-    for (const p of peers[i]) if (values[p]) s.delete(values[p]);
+    for (const p of peers[i]) {
+      if (!values[p] || !s.has(values[p])) continue;
+      s.delete(values[p]);
+      cause[i].set(values[p], p);
+    }
     cands[i] = s;
   }
 
@@ -323,6 +470,50 @@ function derive(userValues) {
   const placed = (u, d) => u.some(i => values[i] === d);
   const only = s => s.values().next().value;
 
+  /**
+   * 唯一候補法の説明：消えた8個それぞれの出どころを集める。
+   * 塞いでいるマスとの位置関係（同じ行／列／ブロック）でまとめると、
+   * 人間が盤面を見て照合できる形になる。
+   */
+  function explainNaked(i, v) {
+    const rel = { row: [], col: [], box: [] };
+    const byTech = new Map();
+    for (const d of ALL) {
+      if (d === v) continue;
+      const c = cause[i].get(d);
+      if (c === undefined) continue;                       // 起こらないが念のため
+      if (typeof c !== "number") {
+        if (!byTech.has(c)) byTech.set(c, []);
+        byTech.get(c).push(d);
+      }
+      else if (rowOf(c) === rowOf(i)) rel.row.push(d);
+      else if (colOf(c) === colOf(i)) rel.col.push(d);
+      else rel.box.push(d);
+    }
+    return {
+      kind: "naked",
+      value: v,
+      groups: ["row", "col", "box"].filter(t => rel[t].length).map(t => ({ type: t, digits: rel[t] })),
+      techs: [...byTech].map(([text, digits]) => ({ text, digits })),
+    };
+  }
+
+  /**
+   * 唯一位置法の説明：同じユニットの他のマスがなぜその数字を置けないのか。
+   * すでに埋まっているマスは自明なので数えない（確定時点の数を書いても、
+   * あとから盤面を見る人間には照合できない）。
+   */
+  function explainHidden(ui, i, d) {
+    const blockers = new Set(), techs = new Set();
+    for (const j of units[ui]) {
+      if (j === i || values[j]) continue;
+      const c = cause[j].get(d);
+      if (c === undefined) continue;
+      if (typeof c === "number") blockers.add(c); else techs.add(c);
+    }
+    return { kind: "hidden", unit: ui, digit: d, blockers: [...blockers], techs: [...techs] };
+  }
+
   function assign(i, v, why) {
     if (values[i]) { if (values[i] !== v) clash.add(i); return; }
     if (!cands[i].has(v)) { clash.add(i); return; }   // 同じ走査内の確定と食い違った
@@ -330,9 +521,19 @@ function derive(userValues) {
     origin[i] = "auto";
     reason[i] = why;
     cands[i] = null;
-    for (const p of peers[i]) if (!values[p]) cands[p].delete(v);
+    log.push({ cell: i, value: v, why });
+    for (const p of peers[i]) {
+      if (values[p] || !cands[p].has(v)) continue;
+      cands[p].delete(v);
+      cause[p].set(v, i);
+    }
     changed = true;
   }
+
+  // 技法が見つけた消去を積む。この時点で候補に無いものは捨てる（説明文の無駄も省ける）
+  const hit = (hits, i, d, detail) => {
+    if (!values[i] && cands[i].has(d)) hits.push([i, d, detail]);
+  };
 
   /**
    * 候補の消去をまとめて適用する。
@@ -341,9 +542,10 @@ function derive(userValues) {
    */
   function strike(hits, name) {
     let any = false;
-    for (const [i, d] of hits) {
+    for (const [i, d, detail] of hits) {
       if (values[i] || !cands[i].has(d)) continue;
       cands[i].delete(d);
+      cause[i].set(d, detail);      // detail 自身が技法名を含む
       any = true;
     }
     if (any) { usage.set(name, (usage.get(name) || 0) + 1); changed = true; }
@@ -354,8 +556,11 @@ function derive(userValues) {
 
   // 唯一候補法：候補が1つだけのマス
   function nakedSingle() {
-    const found = emptyCells().filter(i => cands[i].size === 1).map(i => [i, only(cands[i])]);
-    for (const [i, v] of found) assign(i, v, "唯一の候補");
+    // 説明は候補を消す前に作る（消したあとでは原因を読み出せても文脈が変わる）
+    const found = emptyCells().filter(i => cands[i].size === 1)
+      .map(i => [i, only(cands[i])])
+      .map(([i, v]) => [i, v, explainNaked(i, v)]);
+    for (const [i, v, why] of found) assign(i, v, why);
     if (found.length) usage.set("唯一候補法", (usage.get("唯一候補法") || 0) + 1);
     return found.length > 0;
   }
@@ -367,7 +572,7 @@ function derive(userValues) {
       for (const d of ALL) {
         if (placed(units[ui], d)) continue;
         const sp = spots(units[ui], d);
-        if (sp.length === 1) found.push([sp[0], d, UNIT_KIND[(ui / 9) | 0] + "の中で唯一の位置"]);
+        if (sp.length === 1) found.push([sp[0], d, explainHidden(ui, sp[0], d)]);
       }
     }
     for (const [i, v, why] of found) assign(i, v, why);
@@ -386,22 +591,29 @@ function derive(userValues) {
         if (placed(BOXES[b], d)) continue;
         const sp = spots(BOXES[b], d);
         if (sp.length < 2) continue;
-        if (sp.every(i => rowOf(i) === rowOf(sp[0])))
-          for (const i of ROWS[rowOf(sp[0])]) if (boxOf(i) !== b) hits.push([i, d]);
-        if (sp.every(i => colOf(i) === colOf(sp[0])))
-          for (const i of COLS[colOf(sp[0])]) if (boxOf(i) !== b) hits.push([i, d]);
+        if (sp.every(i => rowOf(i) === rowOf(sp[0]))) {
+          const r = rowOf(sp[0]);
+          const detail = `枝分かれ（ブロック${b + 1}の ${d} は ${r + 1}行目 にしか入らない）`;
+          for (const i of ROWS[r]) if (boxOf(i) !== b) hit(hits, i, d, detail);
+        }
+        if (sp.every(i => colOf(i) === colOf(sp[0]))) {
+          const c = colOf(sp[0]);
+          const detail = `枝分かれ（ブロック${b + 1}の ${d} は ${c + 1}列目 にしか入らない）`;
+          for (const i of COLS[c]) if (boxOf(i) !== b) hit(hits, i, d, detail);
+        }
       }
     }
     // 行（列）内でその数字が1つのブロックに収まっていたら、そのブロックの他マスから消す
     for (let k = 0; k < 9; k++) {
       for (const d of ALL) {
-        for (const [u, sameLine] of [[ROWS[k], i => rowOf(i) === k], [COLS[k], i => colOf(i) === k]]) {
+        for (const [ui, u, sameLine] of [[k, ROWS[k], i => rowOf(i) === k], [k + 9, COLS[k], i => colOf(i) === k]]) {
           if (placed(u, d)) continue;
           const sp = spots(u, d);
           if (sp.length < 2) continue;
           const b = boxOf(sp[0]);
           if (!sp.every(i => boxOf(i) === b)) continue;
-          for (const i of BOXES[b]) if (!sameLine(i)) hits.push([i, d]);
+          const detail = `枝分かれ（${unitName(ui)}の ${d} は ブロック${b + 1} にしか入らない）`;
+          for (const i of BOXES[b]) if (!sameLine(i)) hit(hits, i, d, detail);
         }
       }
     }
@@ -411,8 +623,8 @@ function derive(userValues) {
   // 裸のペア／トリオ／カルテット：n マスの候補の和集合がちょうど n 個
   function nakedSubset() {
     const hits = [];
-    for (const u of units) {
-      const open = u.filter(i => !values[i]);
+    for (let ui = 0; ui < 27; ui++) {
+      const open = units[ui].filter(i => !values[i]);
       for (let n = 2; n <= 4; n++) {
         if (open.length <= n) continue;                       // 消す相手が残らない
         const pool = open.filter(i => cands[i].size <= n);
@@ -420,7 +632,8 @@ function derive(userValues) {
           const un = new Set();
           for (const i of combo) for (const d of cands[i]) un.add(d);
           if (un.size !== n) continue;
-          for (const i of open) if (!combo.includes(i)) for (const d of un) hits.push([i, d]);
+          const detail = `裸の${SUBSET_NAME[n]}（${unitName(ui)}の ${listCells(combo)} が ${listNums(un)} を占める）`;
+          for (const i of open) if (!combo.includes(i)) for (const d of un) hit(hits, i, d, detail);
         }
       }
     }
@@ -430,7 +643,8 @@ function derive(userValues) {
   // 隠れペア／トリオ／カルテット：n 個の数字が n マスにしか現れない
   function hiddenSubset() {
     const hits = [];
-    for (const u of units) {
+    for (let ui = 0; ui < 27; ui++) {
+      const u = units[ui];
       const open = u.filter(i => !values[i]);
       const sp = new Map();
       for (const d of ALL) if (!placed(u, d)) sp.set(d, spots(u, d));
@@ -441,7 +655,8 @@ function derive(userValues) {
           const cells = new Set();
           for (const d of combo) for (const i of sp.get(d)) cells.add(i);
           if (cells.size !== n) continue;
-          for (const i of cells) for (const d of cands[i]) if (!combo.includes(d)) hits.push([i, d]);
+          const detail = `隠れ${SUBSET_NAME[n]}（${unitName(ui)}の ${listNums(combo)} は ${listCells(cells)} にしか入らない）`;
+          for (const i of cells) for (const d of cands[i]) if (!combo.includes(d)) hit(hits, i, d, detail);
         }
       }
     }
@@ -469,7 +684,11 @@ function derive(userValues) {
             for (const [, sp] of combo) for (const i of sp) cs.add(crossOf(i));
             if (cs.size !== n) continue;
             const ks = new Set(combo.map(([k]) => k));
-            for (const c of cs) for (const i of cross[c]) if (!ks.has(lineOf(i))) hits.push([i, d]);
+            const num = s => [...s].sort((a, b) => a - b).map(k => k + 1).join("・");
+            const from = num(ks) + (byRow ? "行目" : "列目");
+            const to = num(cs) + (byRow ? "列目" : "行目");
+            const detail = `${FISH_NAME[n]}（${from}の ${d} は ${to} にしか入らない）`;
+            for (const c of cs) for (const i of cross[c]) if (!ks.has(lineOf(i))) hit(hits, i, d, detail);
           }
         }
       }
@@ -494,8 +713,9 @@ function derive(userValues) {
           for (const b of biv) {
             if (b === p || b === a || !peers[p].has(b)) continue;
             if (!cands[b].has(y) || !cands[b].has(z)) continue;
+            const detail = `XY-Wing（軸 ${cellName(p)}${candSet(x, y)} に対し ${cellName(a)}${candSet(x, z)}・${cellName(b)}${candSet(y, z)} のどちらかが ${z}）`;
             for (const i of open)
-              if (i !== a && i !== b && peers[a].has(i) && peers[b].has(i)) hits.push([i, z]);
+              if (i !== a && i !== b && peers[a].has(i) && peers[b].has(i)) hit(hits, i, z, detail);
           }
         }
       }
@@ -510,9 +730,10 @@ function derive(userValues) {
           if (!peers[p].has(a) || !cands[a].has(x) || !cands[a].has(z)) continue;
           for (const b of biv) {
             if (b === a || !peers[p].has(b) || !cands[b].has(y) || !cands[b].has(z)) continue;
+            const detail = `XYZ-Wing（軸 ${cellName(p)}${candSet(x, y, z)} に対し ${cellName(a)}${candSet(x, z)}・${cellName(b)}${candSet(y, z)} のどれかが ${z}）`;
             for (const i of open)
               if (i !== a && i !== b && peers[p].has(i) && peers[a].has(i) && peers[b].has(i))
-                hits.push([i, z]);
+                hit(hits, i, z, detail);
           }
         }
       }
@@ -536,8 +757,9 @@ function derive(userValues) {
             m !== a && m !== b && n !== a && n !== b &&
             ((peers[a].has(m) && peers[b].has(n)) || (peers[a].has(n) && peers[b].has(m))));
           if (!bridged) continue;
+          const detail = `W-Wing（ともに ${candSet(x, y)} の ${cellName(a)}・${cellName(b)} が ${x} の共役ペアで結ばれ、どちらかが ${y}）`;
           for (const i of open)
-            if (i !== a && i !== b && peers[a].has(i) && peers[b].has(i)) hits.push([i, y]);
+            if (i !== a && i !== b && peers[a].has(i) && peers[b].has(i)) hit(hits, i, y, detail);
         }
       }
     }
@@ -570,13 +792,21 @@ function derive(userValues) {
 
         // 同じ色が同一ユニットに2つ並んだら、その色はすべて偽
         for (const g of [0, 1]) {
-          const bad = side[g].some((a, k) => side[g].slice(k + 1).some(b => peers[a].has(b)));
-          if (bad) for (const i of side[g]) hits.push([i, d]);
+          let pair = null;
+          for (let k = 0; k < side[g].length && !pair; k++)
+            for (let m = k + 1; m < side[g].length; m++)
+              if (peers[side[g][k]].has(side[g][m])) { pair = [side[g][k], side[g][m]]; break; }
+          if (!pair) continue;
+          const detail = `彩色（${d} の連鎖で ${cellName(pair[0])}・${cellName(pair[1])} が同色になり、その色は成り立たない）`;
+          for (const i of side[g]) hit(hits, i, d, detail);
         }
         // 連鎖の外で両方の色から見えるマスは、その数字を持てない
         for (const i of nodes) {
           if (inComp.has(i)) continue;
-          if (side[0].some(j => peers[i].has(j)) && side[1].some(j => peers[i].has(j))) hits.push([i, d]);
+          const s0 = side[0].find(j => peers[i].has(j));
+          const s1 = side[1].find(j => peers[i].has(j));
+          if (s0 === undefined || s1 === undefined) continue;
+          hit(hits, i, d, `彩色（${d} の連鎖の ${cellName(s0)}・${cellName(s1)} は必ず一方が ${d}）`);
         }
       }
     }
@@ -620,7 +850,7 @@ function derive(userValues) {
         for (const i of u) if (!values[i]) stranded.add(i);
 
   const bad = new Set([...dupes, ...dead, ...stranded, ...clash]);
-  return { values, origin, reason, cands, usage, dupes, dead, stranded, clash, bad };
+  return { values, origin, reason, cands, usage, log, dupes, dead, stranded, clash, bad };
 }
 
 /* ============================================================
@@ -630,30 +860,117 @@ function derive(userValues) {
 let userValues = new Array(N).fill(0);
 let view = derive(userValues);
 let sel = 40;                 // 選択中のセル（中央）
-const past = [], future = [];
+
+/**
+ * 確定の履歴。人間の入力と、それが引き起こした自動確定を、起きた順に並べる。
+ * 追記式で、一度書いた行は書き換えない。
+ *
+ * derive() の log をそのまま表示すると履歴にならない。derive() は入力から
+ * 毎回ゼロから導出するので、既知マスが増えると同じマスが別の経路で確定され、
+ * 順番も理由も変わってしまう。そこで履歴は現在の盤面からではなく、
+ * 「人間が入力した順序」から組み立てる。
+ */
+let history = [];
+let entered = [];                // 人間が入力したマスを、入力した順に
+const past = [], future = [];    // {values, entered, history} のスナップショット
+
+// next が now への「追加だけ」か（既知マスの削除・書き換えが無いか）
+const isPureAddition = (now, next) => now.every((v, i) => !v || next[i] === v);
+
+/**
+ * 入力順から履歴を組み立て直す（取り消し・書き換えのとき）。
+ * 1マス入力するごとに derive し、そこで新しく確定したマスを続けて積む。
+ * 先に入力した分の結果は後から入力するものに影響されないので、
+ * この列は必ず「前半が変わらないまま伸びる」。つまり追記式になる。
+ *
+ * 自分で入力したマスは、それより前の入力から先に確定できる場合でも、
+ * 必ず自分の行として入力した位置に出す。盤面ではそのマスを自分の入力として
+ * 表示するので、履歴の種別が食い違わないようにするため。
+ */
+function buildHistory(order, values) {
+  const uv = new Array(N).fill(0);
+  const mine = new Set(order);
+  const out = [], seen = new Set();
+  for (const c of order) {
+    uv[c] = values[c];
+    seen.add(c);
+    out.push({ cell: c, value: values[c], why: { kind: "user" } });
+    for (const e of derive(uv).log) {
+      if (seen.has(e.cell) || mine.has(e.cell)) continue;   // 自分の行として後で出る
+      seen.add(e.cell);
+      out.push(e);
+    }
+  }
+  return out;
+}
+
+/**
+ * 表示する行が盤面と食い違わないようにする。
+ * 矛盾する数字を入れると、途中まで成り立っていた確定が覆ることがある
+ * （候補が消えて、その値では確定できなくなる）。そういう行を落とし、
+ * 逆に盤面で確定しているのに行が無いものを足す。
+ */
+function reconcile(list, v2, order) {
+  const out = list.filter(e =>
+    v2.values[e.cell] === e.value &&
+    v2.origin[e.cell] === (e.why.kind === "user" ? "user" : "auto"));
+  const seen = new Set(out.map(e => e.cell));
+  for (const c of order) if (!seen.has(c) && v2.origin[c] === "user") {
+    seen.add(c);
+    out.push({ cell: c, value: v2.values[c], why: { kind: "user" } });
+  }
+  for (const e of v2.log) if (!seen.has(e.cell)) { seen.add(e.cell); out.push(e); }
+  return out;
+}
 
 function commit(next) {
-  past.push(userValues.slice());
+  const v2 = derive(next);
+  past.push({ values: userValues, entered, history });
   future.length = 0;
+
+  const added = [];
+  for (let i = 0; i < N; i++) if (!userValues[i] && next[i]) added.push(i);
+  const known = new Set(history.map(e => e.cell));
+  // 自動確定済みのマスへの入力は、すでに履歴に行があるので追記では足りない
+  const canAppend = isPureAddition(userValues, next) && added.every(c => !known.has(c));
+
+  let list;
+  if (canAppend) {
+    const seen = new Set(known);
+    list = history.slice();
+    for (const c of added) { seen.add(c); list.push({ cell: c, value: next[c], why: { kind: "user" } }); }
+    for (const e of v2.log) if (!seen.has(e.cell)) { seen.add(e.cell); list.push(e); }
+    entered = [...entered, ...added];
+  } else {
+    // 取り消し・書き換えをすると、書いてある理由が事実と食い違うので作り直す
+    entered = [...entered, ...added].filter(c => next[c]);
+    list = buildHistory(entered, next);
+  }
+
+  history = reconcile(list, v2, entered);
   userValues = next;
+  view = v2;
+  render();
+}
+
+function restore(snap) {
+  userValues = snap.values;
+  entered = snap.entered;
+  history = snap.history;
   view = derive(userValues);
   render();
 }
 
 function undo() {
   if (!past.length) return;
-  future.push(userValues.slice());
-  userValues = past.pop();
-  view = derive(userValues);
-  render();
+  future.push({ values: userValues, entered, history });
+  restore(past.pop());
 }
 
 function redo() {
   if (!future.length) return;
-  past.push(userValues.slice());
-  userValues = future.pop();
-  view = derive(userValues);
-  render();
+  past.push({ values: userValues, entered, history });
+  restore(future.pop());
 }
 
 /* ============================================================
@@ -668,23 +985,27 @@ function toast(msg) {
   toastTimer = setTimeout(() => { el.textContent = ""; }, 2600);
 }
 
+/**
+ * 自動確定されたマスにも入力・上書きできる。問題を書き写している最中に
+ * 先に確定されてしまったマスへ打てないと、入力が続けられないため。
+ * 違う数字を入れれば矛盾として出るので、打ち間違いはそこで気づける。
+ */
 function place(i, v) {
-  if (view.origin[i] === "auto") {
-    toast("自動確定されたマスです。元に戻してから入力してください。");
-    return;
-  }
   if (userValues[i] === v) return;
+  if (!userValues[i] && view.values[i] === v) {
+    toast(`そのマスは他の数字から ${v} に決まっています。`);
+    return;                                  // 入力しても盤面は変わらない
+  }
   const next = userValues.slice();
   next[i] = v;
   commit(next);
 }
 
 function clearCell(i) {
-  if (view.origin[i] === "auto") {
-    toast("自動確定されたマスは消せません。元に戻してください。");
+  if (!userValues[i]) {
+    if (view.values[i]) toast("他の数字から決まっているマスなので、原因の入力を直してください。");
     return;
   }
-  if (!userValues[i]) return;
   const next = userValues.slice();
   next[i] = 0;
   commit(next);
@@ -729,6 +1050,8 @@ const ADVANCED = new Set(["枝分かれ", "裸のペア・トリオ", "隠れペ
 function render() {
   const { values, origin, reason, cands, usage, dupes, dead, stranded, clash, bad } = view;
   const selVal = values[sel];
+  // ツールチップは履歴と同じ文を出す（表示が食い違わないように）
+  const logged = new Map(history.map(e => [e.cell, e.why]));
 
   for (let i = 0; i < N; i++) {
     const { cell, val, cands: candBox, cds } = cellEls[i];
@@ -743,7 +1066,7 @@ function render() {
 
     // 確定の理由をツールチップで示す
     cell.title = v
-      ? (origin[i] === "user" ? "自分の入力" : "自動確定：" + reason[i])
+      ? (origin[i] === "user" ? "自分の入力" : "自動確定：" + reasonText(logged.get(i) || reason[i]))
       : "";
 
     if (v) {
@@ -806,6 +1129,39 @@ function render() {
   }
   techCard.hidden = usage.size === 0;
 
+  // 自動確定の記録
+  const logSec = document.getElementById("logsec");
+  const logList = document.getElementById("log");
+  // 一覧は毎回作り直すので、内部スクロールの位置を持ち越す
+  const keepScroll = logList.scrollTop;
+  logList.textContent = "";
+  for (const { cell, value, why } of history) {
+    const li = document.createElement("li");
+    li.dataset.i = cell;
+    li.className = (why.kind === "user" ? "mine" : "") + (cell === sel ? " cur" : "");
+    li.title = `${cellName(cell)} = ${value}\n${reasonText(why)}`;   // 全文はホバーで
+
+    const head = document.createElement("span");
+    head.className = "head";
+    head.append(cellName(cell) + "=");
+    const what = document.createElement("span");
+    what.className = "what";
+    what.textContent = value;
+    head.appendChild(what);
+
+    const reasonEl = document.createElement("span");
+    reasonEl.className = "why";
+    reasonEl.textContent = reasonShort(why);
+
+    li.append(head, reasonEl);
+    logList.appendChild(li);
+  }
+  const mine = history.filter(e => e.why.kind === "user").length;
+  document.getElementById("logcount").textContent =
+    history.length ? `自分 ${mine}・自動 ${history.length - mine}` : "";
+  logSec.hidden = history.length === 0;
+  logList.scrollTop = keepScroll;
+
   document.getElementById("undo").disabled = past.length === 0;
   document.getElementById("redo").disabled = future.length === 0;
 }
@@ -850,6 +1206,15 @@ document.addEventListener("keydown", e => {
     sel = r * 9 + c;
     render();
   }
+});
+
+// 記録の行をクリックしたら、盤面のそのマスを選ぶ
+document.getElementById("log").addEventListener("click", e => {
+  const li = e.target.closest("li");
+  if (!li) return;
+  sel = +li.dataset.i;
+  render();
+  document.getElementById("board").scrollIntoView({ behavior: "smooth", block: "nearest" });
 });
 
 document.getElementById("undo").addEventListener("click", undo);
