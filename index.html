@@ -58,7 +58,8 @@
 
   header { margin-bottom: 18px; }
   h1 { font-size: 20px; margin: 0 0 4px; letter-spacing: .02em; }
-  .lede { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+  .lede { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.7; }
+  .lede b { color: var(--text); font-weight: 600; }
 
   .layout { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
   .boardcol { flex: 1 1 340px; min-width: 0; }
@@ -128,7 +129,7 @@
   .cd.off { visibility: hidden; }
   .cd.hi { color: var(--auto); font-weight: 700; }
   .cd:not(.off):hover { background: var(--auto); color: #fff; }
-  .cell.bad .cands::after {
+  .cell.dead .cands::after {
     content: "×"; position: absolute; inset: 0;
     display: grid; place-items: center;
     color: var(--err); font-size: clamp(16px, 4.5vw, 26px); pointer-events: none;
@@ -186,7 +187,9 @@
     <h1>数独アシスト</h1>
     <p class="lede">
       確定した数字を入力すると、同じ行・列・3×3ブロックからその候補を消します。<br>
-      候補が1つだけになったセルは自動で確定し、連鎖して絞り込まれます。
+      <b>候補が1つだけになったマス</b>、および<b>行・列・ブロックの中でその数字を置ける場所が1つだけになったマス</b>は、
+      連鎖が止まるまで自動で確定します。<br>
+      自動確定したマスにカーソルを重ねると、確定した理由が出ます。
     </p>
   </header>
 
@@ -252,35 +255,70 @@ for (let b = 0; b < 9; b++) {
   units.push(u);
 }
 
+// ユニットの種別名（units の並び順に対応）
+const UNIT_KIND = ["行", "列", "ブロック"];
+
 // 各セルが影響を受ける相手（同じ行・列・ブロックのセル）
 const peers = Array.from({ length: N }, () => new Set());
 for (const u of units) for (const i of u) for (const j of u) if (i !== j) peers[i].add(j);
 
 /**
+ * 1 回の走査で見つかった確定を集める。
+ * 同じセルに別の値が提案されたら推論の矛盾として記録する。
+ */
+function propose(found, reason, clash, i, v, why) {
+  const prev = found.get(i);
+  if (prev === undefined) { found.set(i, v); reason[i] = why; return; }
+  if (prev !== v) clash.add(i);
+}
+
+/**
  * 人間の入力から盤面全体を導出する。
  *  1. 空きセルの候補 = 1〜9 から、同じ行・列・ブロックの確定値を除いたもの
- *  2. 候補が1つだけのセルは確定（唯一候補法）
- *  3. 変化がなくなるまで繰り返す（連鎖）
+ *  2. 唯一候補法：候補が1つだけのセルを確定
+ *  3. 唯一位置法：ある数字が、行・列・ブロックの中で1マスにしか入らないならそこを確定
+ *  4. 変化がなくなるまで繰り返す（連鎖）
  */
 function derive(userValues) {
   const values = userValues.slice();
   const origin = values.map(v => (v ? "user" : null));
+  const reason = new Array(N).fill("");
+  const clash = new Set();      // 相反する推論が出たセル
   let cands = [];
+  let noPlace = [];             // [ユニット番号, 数字] ― 置き場所が無くなった数字
 
   for (let guard = 0; guard <= N; guard++) {
     cands = new Array(N).fill(null);
-    const singles = [];
+    const found = new Map();    // セル番号 -> 確定値
+    noPlace = [];
 
+    // --- 候補の算出と、唯一候補法 ---
     for (let i = 0; i < N; i++) {
       if (values[i]) continue;
       const s = new Set(ALL);
       for (const p of peers[i]) if (values[p]) s.delete(values[p]);
       cands[i] = s;
-      if (s.size === 1) singles.push([i, s.values().next().value]);
+      if (s.size === 1) propose(found, reason, clash, i, s.values().next().value, "唯一の候補");
     }
 
-    if (singles.length === 0) break;          // 収束
-    for (const [i, v] of singles) {
+    // --- 唯一位置法：各ユニットで、その数字を置けるマスが1つだけか ---
+    for (let ui = 0; ui < units.length; ui++) {
+      const u = units[ui];
+      for (const d of ALL) {
+        if (u.some(i => values[i] === d)) continue;   // すでに確定済み
+        let spot = -1, count = 0;
+        for (const i of u) {
+          if (values[i] || !cands[i].has(d)) continue;
+          spot = i;
+          if (++count > 1) break;
+        }
+        if (count === 1) propose(found, reason, clash, spot, d, UNIT_KIND[(ui / 9) | 0] + "の中で唯一の位置");
+        else if (count === 0) noPlace.push([ui, d]);
+      }
+    }
+
+    if (found.size === 0) break;          // 収束
+    for (const [i, v] of found) {
       values[i] = v;
       origin[i] = "auto";
       cands[i] = null;
@@ -288,13 +326,13 @@ function derive(userValues) {
   }
 
   // 同一ユニット内での数字の重複
-  const errors = new Set();
+  const dupes = new Set();
   for (const u of units) {
     const seen = new Map();
     for (const i of u) {
       const v = values[i];
       if (!v) continue;
-      if (seen.has(v)) { errors.add(i); errors.add(seen.get(v)); }
+      if (seen.has(v)) { dupes.add(i); dupes.add(seen.get(v)); }
       else seen.set(v, i);
     }
   }
@@ -303,7 +341,12 @@ function derive(userValues) {
   const dead = new Set();
   for (let i = 0; i < N; i++) if (!values[i] && cands[i].size === 0) dead.add(i);
 
-  return { values, origin, cands, errors, dead };
+  // 置き場所が無くなった数字を含むユニットの空きセル
+  const stranded = new Set();
+  for (const [ui] of noPlace) for (const i of units[ui]) if (!values[i]) stranded.add(i);
+
+  const bad = new Set([...dupes, ...dead, ...stranded, ...clash]);
+  return { values, origin, reason, cands, dupes, dead, stranded, clash, bad };
 }
 
 /* ============================================================
@@ -407,19 +450,24 @@ for (let i = 0; i < N; i++) {
 }
 
 function render() {
-  const { values, origin, cands, errors, dead } = view;
+  const { values, origin, reason, cands, dupes, dead, stranded, clash, bad } = view;
   const selVal = values[sel];
 
   for (let i = 0; i < N; i++) {
     const { cell, val, cands: candBox, cds } = cellEls[i];
     const v = values[i];
-    const bad = errors.has(i) || dead.has(i);
 
     // 背景のハイライト
     cell.classList.toggle("sel", i === sel);
     cell.classList.toggle("peer", i !== sel && peers[sel].has(i));
     cell.classList.toggle("same", i !== sel && !!selVal && v === selVal);
-    cell.classList.toggle("bad", bad);
+    cell.classList.toggle("bad", bad.has(i));
+    cell.classList.toggle("dead", dead.has(i));
+
+    // 確定の理由をツールチップで示す
+    cell.title = v
+      ? (origin[i] === "user" ? "自分の入力" : "自動確定：" + reason[i])
+      : "";
 
     if (v) {
       val.textContent = v;
@@ -450,11 +498,13 @@ function render() {
 
   const st = document.getElementById("status");
   st.className = "status";
-  if (errors.size || dead.size) {
+  if (bad.size) {
     st.classList.add("bad");
-    st.textContent = dead.size && !errors.size
-      ? "矛盾：候補が無いマスがあります"
-      : "矛盾：同じ数字が重複しています";
+    st.textContent =
+      dupes.size    ? "矛盾：同じ数字が重複しています" :
+      dead.size     ? "矛盾：候補が無いマスがあります" :
+      stranded.size ? "矛盾：置ける場所が無い数字があります" :
+                      "矛盾：推論が食い違っています";
   } else if (filled === N) {
     st.classList.add("ok");
     st.textContent = "完成しました";
